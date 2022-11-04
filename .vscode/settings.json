@@ -1,0 +1,8 @@
+{
+  "files.associations": {
+    "*.cjson": "jsonc",
+    "*.wxss": "css",
+    "*.wxs": "javascript",
+    "yzb_node_cfg.h": "c"
+  }
+}

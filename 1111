@@ -1,0 +1,155 @@
+#include "yzb_node_cfg.h"
+// 2022-10-28 16:27:44，为网关设备开辟数据接收缓冲区，大小和标记组在文件中指定，使用IN_save进行数据的记录，不限单条等长
+//使用EN_read进行读取，判定IN！=OUT,连续读取。
+typedef struct
+{
+  uint8_t *STA;                           // 4字节
+  uint8_t *END;                           // 4字节
+} PM;                                     // 8字节
+uint8_t menbuf[BUFNUMB];                  //数据缓冲区
+const uint8_t *PL = &menbuf[BUFNUMB - 1]; //缓存区最后一个单元
+PM M[M_SIZE];                             // 80字节
+PM *IN, *OUT;
+PM *EN;
+
+void gate_save_init()
+{
+  IN = &M[0];
+  printf("&IN=%p,IN=%p\r\n", &IN, IN);
+  OUT = &M[0];
+  printf("&OUT=%p,OUT=%p\r\n", &OUT, OUT);
+  EN = &M[M_SIZE - 1]; // M[0]~M[9],没有M[10],下标减一
+  printf("&EN=%p,EN=%p\r\n", &EN, EN);
+  IN->STA = &menbuf[0];
+  OUT->STA = &menbuf[0];
+}
+//将缓冲区BUF的数据缓存在缓存区。
+void IN_save(uint8_t *buf, int size)
+{
+  uint8_t *p = IN->STA;
+  printf("*IN=%p,*END=%p,E-I=%d\r\n", IN, EN, EN - IN);
+  if ((EN - IN) > 0) // M有空间
+  {
+    printf("MMMMMM have a space!&IN=%p,IN=%p\r\n", &IN, IN);
+    if (PL - p >= size) // BUF数组有空间
+    {
+      printf("BUF have a space!IN->STA=%p\r\n", p);
+      for (int i = 0; i < size; i++)
+      {
+        *p = *buf;
+        // printf("&p=%p,*p=%d,buf=%d\r\n", p, *p, *buf);
+        p++;
+        buf++;
+      }
+      IN->END = p;
+      IN++;
+      IN->STA = p;
+    }
+    else
+    {
+      printf("BUF not space!IN->STA=%p\r\n", p);
+      for (int i = 0; i < size; i++)
+      {
+        *p = *buf;
+
+        p++;
+        buf++;
+      }
+      IN->END = p;
+      IN++;
+      IN->STA = &menbuf[0]; //从头覆盖缓冲区
+    }
+  }
+  else if (EN - IN == 0)
+  {
+    printf("MMMMMM not space!&IN=%p,IN=%p\r\n", &IN, IN);
+    if (PL - p >= size)
+    {
+
+      printf("BUF have a space!IN->STA=%p\r\n", p);
+      for (int i = 0; i < size; i++)
+      {
+        *p = *buf;
+        p++;
+        buf++;
+      }
+      IN->END = p;
+      IN = M; //从头使用M
+      IN->STA = p;
+    }
+    else
+    {
+      printf("BUF not space!IN->STA=%p\r\n", p);
+      for (int i = 0; i < size; i++)
+      {
+        *p = *buf;
+        p++;
+        buf++;
+      }
+      IN->END = p;
+      IN = M;               //从头使用M
+      IN->STA = &menbuf[0]; //从头覆盖缓冲区
+    }
+  }
+}
+//读取缓冲区数据,结果在形参中。根据in!=out判断是否有数据
+bool EN_read(uint8_t *buf, int *len, bool flag)
+{
+  uint8_t *p = OUT->STA;
+  if (flag) //读下一个
+  {
+    if (IN != OUT) //有数据
+    {
+      if (EN - OUT > 0) //因为读取完需要OUT++操作，需判断out的位置。M有空间
+      {
+        *len = OUT->END - OUT->STA;
+        printf("len=%d\r\n", *len);
+        for (int i = 0; i < *len; i++)
+        {
+          *buf = *p;
+          p++;
+          buf++;
+        }
+        OUT++; // out移向下一个
+      }
+      else if (EN - OUT == 0) // M最后一个空间，OUT指针已满
+      {
+        *len = OUT->END - OUT->STA;
+        printf("len=%d\r\n", *len);
+        for (int i = 0; i < *len; i++)
+        {
+          *buf = *p;
+          p++;
+          buf++;
+        }
+        OUT = M; //读指针指向开头
+      }
+      return true;
+    }
+    else
+    {
+      printf("no data!\r\n");
+      return false;
+    }
+  }
+  else //只读本条，不加地址
+  {
+    *len = OUT->END - OUT->STA;
+    printf("len=%d\r\n", *len);
+    if (IN != OUT) //有数据
+    {
+      for (int i = 0; i < *len; i++)
+      {
+        *buf = *p;
+        p++;
+        buf++;
+      }
+      return true;
+    }
+    else
+    {
+      printf("no data!\r\n");
+      return false;
+    }
+  }
+}
